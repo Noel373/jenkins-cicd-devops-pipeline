@@ -1,0 +1,11 @@
+plugin: aws_ec2
+regions:
+  - us-east-1
+keyed_groups:
+  - key: tags.Name
+    prefix: ec2
+hostnames:
+  - private-ip-address  # Use public-ip-address if Ansible control node is not in the same VPC
+filters:
+  tag:Environment: dev
+  instance-state-name: running
