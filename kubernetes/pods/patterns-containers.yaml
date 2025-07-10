@@ -1,0 +1,83 @@
+#cntainer patterns:
+
+#adapter.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webserver
+  labels:
+    app: webserver
+spec:
+  volumes:
+    - name: nginx-conf
+      configMap:
+        name: nginx-conf
+        items:
+          - key: default.conf
+            path: default.conf
+  containers:
+    - name: webserver
+      image: nginx
+      ports:
+        - containerPort: 80
+      volumeMounts:
+        - mountPath: /etc/nginx/conf.d
+          name: nginx-conf
+          readOnly: true
+    - name: adapter
+      image: nginx/nginx-prometheus-exporter
+      args: ["-nginx.scrape-uri","http://localhost/nginx_status"]
+      ports:
+        - containerPort: 9113
+#configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+data:
+  default.conf: |
+    server {
+      listen       80;
+      server_name  localhost;
+      location / {
+          root   /usr/share/nginx/html;
+          index  index.html index.htm;
+      }
+      error_page   500 502 503 504  /50x.html;
+      location = /50x.html {
+          root   /usr/share/nginx/html;
+      }
+      location /nginx_status {
+        stub_status;
+        allow 127.0.0.1;  #only allow requests from localhost
+        deny all;   #deny all other hosts
+      }
+    }
+
+ # service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-nodeport-service
+  labels:
+    app: myapp-service-httpd
+    tier: frontend
+spec:
+  type: NodePort
+  ports:
+    - targetPort: 80
+      port: 80
+      nodePort: 30008
+      name: nginx
+    - targetPort: 9113
+      port: 9113
+      nodePort: 30009
+      name: adaptor
+  selector:
+    app: webserver
+
+# init-sidecar.yaml
+# config_map_aws.yaml
+apiVersion: v1

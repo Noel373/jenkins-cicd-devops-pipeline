@@ -1,0 +1,41 @@
+# stateless-app.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: stateless-app
+spec:
+  selector:
+    app: stateless-app
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stateless-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: stateless-app
+  template:
+    metadata:
+      labels:
+        app: stateless-app
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest  # Replac image
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DB_HOST
+              value: "mysql"   # Kubernetes DNS name of MySQL service
+            - name: DB_USER
+              value: "root"
+            - name: DB_PASSWORD
+              value: "mypassword"
+            - name: DB_NAME
+              value: "mydatabase"
+
