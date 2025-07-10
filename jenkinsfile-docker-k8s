@@ -1,0 +1,58 @@
+pipeline{
+  agent any
+  tools{
+    maven "maven3.9.1"
+  }
+  environment{
+    SONAR_TOKEN = credentials('sonarqube-token')
+    DOCKER_USER = credentials('dockerhub-creds')
+    IMAGE_NAME = 'noeldevops/myapp'
+  }
+  stages {
+    stage('clone'){
+      steps{
+       git branch: 'working', credentialsId: '285804eb-0ca2-46a3-9e9a-ff7438b488db', url: 'https://github.com/porta420/my-project-007'
+      }
+    }
+    stage('build artifacts'){
+      steps{
+        sh "mvn clean package"
+      }
+    }
+    stage('SonarQube Analysis') {
+      steps {
+        sh '''
+          mvn clean verify sonar:sonar \
+            -Dsonar.projectKey=project-007 \
+            -Dsonar.host.url=http://localhost:30227 \
+            -Dsonar.login=squ_7bddd432406397b90a8f503e14b5798d5e39c0e7
+        '''
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        sh '''
+          docker build -t $IMAGE_NAME:$BUILD_NUMBER .
+        '''
+      }
+    }
+    stage('Login to DockerHub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker build -t $IMAGE_NAME:$BUILD_NUMBER .
+            docker push $IMAGE_NAME:$BUILD_NUMBER
+          '''
+      }
+    }
+    }
+    stage('Push to DockerHub') {
+      steps {
+        sh '''
+          docker push $IMAGE_NAME:$BUILD_NUMBER
+        '''
+      }
+    }
+  }
+  }
