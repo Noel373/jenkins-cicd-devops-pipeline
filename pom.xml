@@ -96,7 +96,7 @@
       <repository>
         <id>nexus</id>
         <name>Landmark Technologies Releases Nexus Repository</name>
-        <url>http://localhost:32001/repository/project-007/</url>
+        <url>http://localhost:32001/repository/project-007-Release/</url>
       </repository>
       
       <snapshotRepository>
