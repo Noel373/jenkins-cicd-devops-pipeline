@@ -1,0 +1,20 @@
+plugin: aws_ec2
+
+regions:
+  - eu-north-1
+
+filters:
+  instance-state-name: running
+
+keyed_groups:
+  - key: tags.Name
+    prefix: ""
+    separator: ""
+
+hostnames:
+  - private-ip-address
+
+compose:
+  ansible_host: private_ip_address
+  
+#ansible-playbook install-docker.yaml -i dynamic-inventory-aws_ec2.yml -u ubuntu --private-key=/tmp/ansible.pem

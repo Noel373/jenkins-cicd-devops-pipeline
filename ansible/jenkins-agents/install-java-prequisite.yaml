@@ -1,0 +1,43 @@
+# Playbook to install Java and ensure Jenkins user exists on all hosts
+---
+- name: Install Java and create Jenkins user on all hosts
+  hosts: all
+  become: yes
+  vars:
+    java_package_debian: openjdk-17-jdk
+    java_package_redhat: java-17-openjdk
+    jenkins_user: jenkins
+
+  tasks:
+    - name: Ensure APT cache is updated (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install Java on Debian/Ubuntu
+      apt:
+        name: "{{ java_package_debian }}"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Java on RedHat/CentOS/Amazon Linux
+      yum:
+        name: "{{ java_package_redhat }}"
+        state: present
+      when: ansible_os_family in ["RedHat", "Amazon"]
+
+    - name: Ensure Jenkins user exists on all nodes
+      user:
+        name: "{{ jenkins_user }}"
+        shell: /bin/bash
+        state: present
+        create_home: yes
+
+    - name: Verify Java installation
+      command: java -version
+      register: java_version_output
+      changed_when: false
+
+    - name: Print Java version
+      debug:
+        var: java_version_output.stdout_lines
