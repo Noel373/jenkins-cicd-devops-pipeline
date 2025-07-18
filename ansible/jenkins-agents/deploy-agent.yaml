@@ -1,0 +1,92 @@
+---
+- name: Install Terraform, AWS CLI, and kubectl on Jenkins Deploy Agent
+  hosts: deploy_agent
+  become: true
+  vars:
+    terraform_version: "1.8.5"
+    kubectl_version: "v1.30.1"
+    aws_cli_url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+
+  tasks:
+    - name: Ensure jenkins user exists
+      user:
+        name: jenkins
+        shell: /bin/bash
+        state: present
+        create_home: yes
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - unzip
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    # Terraform Installation
+    - name: Download Terraform
+      get_url:
+        url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+        dest: "/tmp/terraform.zip"
+
+    - name: Unzip Terraform to /usr/local/bin
+      unarchive:
+        src: "/tmp/terraform.zip"
+        dest: /usr/local/bin/
+        remote_src: yes
+        mode: '0755'
+
+    # AWS CLI Installation
+    - name: Download AWS CLI v2 installer
+      get_url:
+        url: "{{ aws_cli_url }}"
+        dest: "/tmp/awscliv2.zip"
+
+    - name: Unzip AWS CLI installer
+      unarchive:
+        src: "/tmp/awscliv2.zip"
+        dest: "/tmp"
+        remote_src: yes
+
+    - name: Run AWS CLI installer
+      command: "/tmp/aws/install --update"
+      args:
+        creates: /usr/local/bin/aws
+
+    # kubectl Installation
+    - name: Download kubectl binary
+      get_url:
+        url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    # Verification Tasks
+    - name: Verify Terraform installation
+      command: terraform version
+      register: terraform_ver
+      changed_when: false
+
+    - name: Verify AWS CLI installation
+      command: aws --version
+      register: aws_ver
+      changed_when: false
+
+    - name: Verify kubectl installation
+      command: kubectl version --client=true --short
+      register: kubectl_ver
+      changed_when: false
+
+    - name: Print installed versions
+      debug:
+        msg:
+          - "Terraform: {{ terraform_ver.stdout }}"
+          - "AWS CLI: {{ aws_ver.stdout }}"
+          - "kubectl: {{ kubectl_ver.stdout }}"
+
+    # Optional: Reboot if new groups or kernel modules need effect
+    # - name: Reboot the system if needed
+    #   reboot:
+    #     reboot_timeout: 300

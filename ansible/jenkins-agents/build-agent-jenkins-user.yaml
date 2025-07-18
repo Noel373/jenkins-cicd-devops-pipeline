@@ -1,0 +1,91 @@
+# playbook to configure build agent to run as jenkins user using ssh keys generated from jenkins controller
+# secured
+
+- name: Prepare Jenkins SSH Build Agent for Docker
+  hosts: build_agent
+  become: true
+  vars:
+    jenkins_user: jenkins
+    jenkins_public_key: "ssh-rsa AAAA...your-key-here... jenkins@controller"  # <-- Replace with actual Jenkins controller public key
+
+  tasks:
+    - name: Ensure Jenkins user exists
+      user:
+        name: "{{ jenkins_user }}"
+        shell: /bin/bash
+        state: present
+        create_home: yes
+
+    - name: Install required packages (Debian/Ubuntu)
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - gnupg
+        - lsb-release
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/{{ ansible_distribution | lower }} {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker
+      package:
+        name: docker.io
+        state: present
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add Jenkins user to docker group
+      user:
+        name: "{{ jenkins_user }}"
+        groups: docker
+        append: yes
+      register: jenkins_group_update
+
+    - name: Ensure .ssh directory exists for Jenkins user
+      file:
+        path: "/home/{{ jenkins_user }}/.ssh"
+        state: directory
+        owner: "{{ jenkins_user }}"
+        group: "{{ jenkins_user }}"
+        mode: '0700'
+
+    - name: Add Jenkins public key for SSH access
+      copy:
+        content: "{{ jenkins_public_key }}"
+        dest: "/home/{{ jenkins_user }}/.ssh/authorized_keys"
+        owner: "{{ jenkins_user }}"
+        group: "{{ jenkins_user }}"
+        mode: '0600'
+
+    - name: Print Docker version for verification
+      command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Show Docker version
+      debug:
+        var: docker_version.stdout
+
+    - name: Reboot the system if group membership changed
+      reboot:
+        msg: "Rebooting after adding Jenkins user to Docker group"
+        connect_timeout: 5
+        reboot_timeout: 300
+      when: jenkins_group_update is changed

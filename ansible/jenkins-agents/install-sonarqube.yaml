@@ -1,0 +1,88 @@
+---
+# install-sonarqube.yaml
+
+- name: Install SonarQube
+  hosts: sonarqube
+  become: yes
+  vars:
+    sonarqube_version: 9.9.1.69595
+    sonarqube_download_url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-{{ sonarqube_version }}.zip"
+    sonarqube_dir: "/opt/sonarqube"
+    sonarqube_user: "sonarqube"
+    java_package: "{{ 'java-17-openjdk' if ansible_os_family == 'RedHat' else 'openjdk-17-jdk' }}"
+    unzip_package: unzip
+
+  tasks:
+    - name: Install required packages
+      package:
+        name: "{{ item }}"
+        state: present
+        update_cache: yes
+      loop:
+        - "{{ java_package }}"
+        - "{{ unzip_package }}"
+        - wget
+
+    - name: Create sonarqube user
+      user:
+        name: "{{ sonarqube_user }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Download SonarQube
+      get_url:
+        url: "{{ sonarqube_download_url }}"
+        dest: "/tmp/sonarqube.zip"
+
+    - name: Extract SonarQube
+      unarchive:
+        src: "/tmp/sonarqube.zip"
+        dest: /opt
+        remote_src: yes
+        creates: "{{ sonarqube_dir }}"
+
+    - name: Rename extracted folder
+      command: mv /opt/sonarqube-{{ sonarqube_version }} {{ sonarqube_dir }}
+      args:
+        creates: "{{ sonarqube_dir }}"
+
+    - name: Set ownership
+      file:
+        path: "{{ sonarqube_dir }}"
+        owner: "{{ sonarqube_user }}"
+        group: "{{ sonarqube_user }}"
+        recurse: yes
+
+    - name: Create systemd service for SonarQube
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=network.target
+
+          [Service]
+          Type=forking
+          User={{ sonarqube_user }}
+          Group={{ sonarqube_user }}
+          ExecStart={{ sonarqube_dir }}/bin/linux-x86-64/sonar.sh start
+          ExecStop={{ sonarqube_dir }}/bin/linux-x86-64/sonar.sh stop
+          Restart=always
+          LimitNOFILE=65536
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=multi-user.target
+      mode: '0644'
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Reset failed state for SonarQube
+      command: systemctl reset-failed sonarqube
+
+    - name: Enable and start SonarQube
+      systemd:
+        name: sonarqube
+        enabled: yes
+        state: started
