@@ -1,0 +1,8 @@
+// backend.tf
+terraform {
+  backend "s3" {
+    bucket = "your-tfstate-bucket"
+    key    = "ec2/terraform.tfstate"
+    region = "eu-north-1"
+  }
+}

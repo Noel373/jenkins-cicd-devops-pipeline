@@ -73,13 +73,24 @@
 
           [Install]
           WantedBy=multi-user.target
-      mode: '0644'
+        mode: '0644'
 
     - name: Reload systemd
       command: systemctl daemon-reload
 
+    - name: Wait a moment for systemd to reload
+      pause:
+        seconds: 2
+
+    - name: Check if sonarqube service file exists
+      stat:
+        path: /etc/systemd/system/sonarqube.service
+      register: sonarqube_service_file
+
     - name: Reset failed state for SonarQube
       command: systemctl reset-failed sonarqube
+      when: sonarqube_service_file.stat.exists
+      ignore_errors: yes
 
     - name: Enable and start SonarQube
       systemd:
