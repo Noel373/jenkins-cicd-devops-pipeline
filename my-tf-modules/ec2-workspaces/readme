@@ -1,0 +1,47 @@
+applying the code 
+cd terraform-ec2/ec2
+terraform init
+==============
+terraform workspace new sonarqube
+terraform apply -var-file=sonarqube.tfvars
+terraform apply --auto-approve  -var-file="sonarqube.tfvars"
+terraform workspace select sonarqube
+terraform destroy -var-file=sonarqube.tfvars
+terraform destroy --auto-approve -var-file="sonarqube.tfvars"
+================================
+terraform workspace new nexus
+terraform plan -var-file="nexus.tfvars"
+terraform apply -var-file=nexus.tfvars
+terraform apply --auto-approve -var-file="nexus.tfvars"
+terraform workspace select nexus
+terraform destroy -var-file=nexus.tfvars  
+terraform destroy --auto-approve -var-file="nexus.tfvars"
+============================
+terraform workspace new maven
+terraform plan -var-file="maven.tfvars"
+terraform apply -var-file=maven.tfvars
+terraform apply --auto-approve -var-file="maven.tfvars"
+terraform workspace select maven
+terraform destroy -var-file=maven.tfvars
+terraform destroy --auto-approve -var-file="maven.tfvars"
+=====================================
+terraform workspace select sonarqube
+terraform destroy -var-file=sonarqube.tfvars
+
+setting up unique backends for the instances:
+// backend.tf
+terraform {
+  backend "s3" {
+    bucket = "your-tfstate-bucket"
+    key    = "ec2/${terraform.workspace}/terraform.tfstate"
+    region = "eu-north-1"
+  }
+}
+=====================================
+
+terraform init -reconfigure
+terraform workspace new sonarqube
+terraform apply -var-file=sonarqube.tfvars
+
+terraform workspace new nexus
+terraform apply -var-file=nexus.tfvars
