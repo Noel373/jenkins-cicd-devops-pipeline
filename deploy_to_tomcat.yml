@@ -3,7 +3,7 @@
   hosts: tomcat
   become: yes
   vars:
-    tomcat_webapps_dir: "/opt/tomcat/latest/webapps"
+    tomcat_webapps_dir: "/opt/tomcat/webapps"
     war_src: "{{ war_file | default('target/tesla.war') }}"
     war_dest: "{{ tomcat_webapps_dir }}/tesla.war"
     timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
