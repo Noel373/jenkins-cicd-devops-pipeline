@@ -1,0 +1,43 @@
+---
+- name: Deploy tesla.war to Tomcat servers
+  hosts: tomcat
+  become: yes
+  vars:
+    tomcat_webapps_dir: "/opt/tomcat/latest/webapps"
+    war_src: "{{ war_file | default('target/tesla.war') }}"
+    war_dest: "{{ tomcat_webapps_dir }}/tesla.war"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    backup_dir: "{{ tomcat_webapps_dir }}/backup_{{ timestamp }}"
+
+  tasks:
+    - name: Stop Tomcat service
+      systemd:
+        name: tomcat
+        state: stopped
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup existing tesla.war if present
+      shell: |
+        if [ -f "{{ war_dest }}" ]; then
+          mv "{{ war_dest }}" "{{ backup_dir }}/tesla.war"
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Copy new tesla.war to Tomcat webapps
+      copy:
+        src: "{{ war_src }}"
+        dest: "{{ war_dest }}"
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+
+    - name: Start Tomcat service
+      systemd:
+        name: tomcat
+        state: started
