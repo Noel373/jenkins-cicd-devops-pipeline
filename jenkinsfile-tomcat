@@ -1,0 +1,58 @@
+pipeline {
+    agent { label 'deploy-agent' }
+    tools{
+    maven "maven3.9.1"
+      }
+
+    stages {
+        stage('Clone') {
+            steps {
+                git branch: 'working', credentialsId: '285804eb-0ca2-46a3-9e9a-ff7438b488db', url: 'https://github.com/porta420/my-project-007'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                 sh "mvn clean package"
+            }
+        }
+
+        /*
+        stage('Test') {
+            steps {
+                sh "${MVN_HOME}/bin/mvn test"
+            }
+        }
+        */
+
+        /*
+        stage('Upload Artifacts') {
+            steps {
+                echo "Uploading artifacts to Nexus..."
+            }
+        }
+        */
+
+        stage('Deploy') {
+            steps {
+                echo "Deploying tesla.war via Ansible..."
+                sh """
+                  ansible-playbook -i dynamic-inventory-aws_ec2.yml deploy_to_tomcat.yml \
+                    -u ubuntu \
+                    --private-key=/etc/ansible/ansible.pem \
+                    --extra-vars 'deploy_agent_workspace=/home/ansible/jenkins/workspace/java-app war_name=tesla.war'
+                 """
+
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "deployment pipeline completed successfully."
+        }
+        failure {
+            echo "pipeline failed. Check logs."
+        }
+    }
+}
