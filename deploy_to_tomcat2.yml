@@ -3,7 +3,7 @@
   hosts: tomcat
   become: yes
   vars:
-    war_src: "/home/ansible/jenkins/workspace/java-app/target/tesla.war"
+    war_src: "/home/ansible/workspace/java-app/target/tesla.war"
     war_dest: "/opt/tomcat/webapps/tesla.war"
     backup_dir: "/opt/tomcat/webapps/backup_{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
 
