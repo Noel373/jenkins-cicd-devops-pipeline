@@ -34,6 +34,7 @@
     - name: Backup existing WAR if it exists
       shell: |
         if [ -f "{{ war_dest }}" ]; then
+          mkdir -p "{{ backup_dir }}"
           mv "{{ war_dest }}" "{{ backup_dir }}/{{ war_name }}"
         fi
       args:
