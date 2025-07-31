@@ -1,0 +1,42 @@
+---
+- name: Deploy hardcoded tesla.war to Tomcat servers
+  hosts: tomcat
+  become: yes
+  vars:
+    war_src: "/home/ansible/workspace/java-app/target/tesla.war"
+    war_dest: "/opt/tomcat/webapps/tesla.war"
+    backup_dir: "/opt/tomcat/webapps/backup_{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+  tasks:
+    - name: Stop Tomcat service
+      systemd:
+        name: tomcat
+        state: stopped
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup existing WAR if it exists
+      shell: |
+        if [ -f "{{ war_dest }}" ]; then
+          mv "{{ war_dest }}" "{{ backup_dir }}/tesla.war"
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Copy tesla.war from Jenkins workspace to Tomcat
+      copy:
+        src: "{{ war_src }}"
+        dest: "{{ war_dest }}"
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+        remote_src: no
+
+    - name: Start Tomcat service
+      systemd:
+        name: tomcat
+        state: started

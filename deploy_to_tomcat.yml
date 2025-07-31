@@ -1,0 +1,55 @@
+---
+- name: Deploy WAR file from deploy-agent to Tomcat servers
+  hosts: tomcat
+  become: yes
+  vars:
+    # Full path to the WAR file on the Jenkins deploy-agent
+    # NOTE: Make sure this matches the agent's workspace path
+    war_src: "{{ deploy_agent_workspace }}/{{ war_relative_path }}"
+    
+    # Destination path on the Tomcat server
+    war_dest: "{{ tomcat_webapps_dir }}/{{ war_name }}"
+    
+    # Timestamped backup directory
+    backup_dir: "{{ tomcat_webapps_dir }}/backup_{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+
+    # Default values (can be overridden via --extra-vars)
+    deploy_agent_workspace: "/home/ansible/jenkins/workspace/java-app"
+    war_relative_path: "target/tesla.war"
+    war_name: "tesla.war"
+    tomcat_webapps_dir: "/opt/tomcat/webapps"
+
+  tasks:
+    - name: Stop Tomcat service
+      systemd:
+        name: tomcat
+        state: stopped
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Backup existing WAR if it exists
+      shell: |
+        if [ -f "{{ war_dest }}" ]; then
+          mkdir -p "{{ backup_dir }}"
+          mv "{{ war_dest }}" "{{ backup_dir }}/{{ war_name }}"
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Copy WAR file from deploy-agent to Tomcat
+      copy:
+        src: "{{ war_src }}"
+        dest: "{{ war_dest }}"
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+        remote_src: no
+
+    - name: Start Tomcat service
+      systemd:
+        name: tomcat
+        state: started
