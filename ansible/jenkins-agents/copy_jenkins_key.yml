@@ -1,0 +1,46 @@
+---
+- name: Copy Jenkins controller SSH public key to Jenkins agents
+  hosts: jenkins_agents
+  become: true
+  vars:
+    target_user: "ubuntu"  # Change to 'jenkins' if needed
+    public_key_path_on_control: "/tmp/jenkins_controller.pub"
+
+  tasks:
+    - name: Ensure .ssh directory exists for {{ target_user }}
+      file:
+        path: "/home/{{ target_user }}/.ssh"
+        state: directory
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0700'
+
+    - name: Copy Jenkins controller public key to agent
+      block:
+        - name: Read Jenkins controller public key from Ansible control node
+          delegate_to: localhost
+          run_once: true
+          slurp:
+            src: "{{ public_key_path_on_control }}"
+          register: slurped_key
+
+        - name: Set decoded key as variable
+          set_fact:
+            jenkins_pubkey: "{{ slurped_key['content'] | b64decode }}"
+
+        - name: Add Jenkins controller public key to authorized_keys
+          authorized_key:
+            user: "{{ target_user }}"
+            key: "{{ jenkins_pubkey }}"
+            state: present
+            exclusive: no
+            manage_dir: no
+
+      rescue:
+        - name: Log error if key copy fails
+          debug:
+            msg: "Failed to copy Jenkins SSH key to {{ inventory_hostname }}"
+
+        - name: Fail the play explicitly
+          fail:
+            msg: "Stopped: Key copy operation failed on {{ inventory_hostname }}."

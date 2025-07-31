@@ -12,6 +12,7 @@ resource "aws_instance" "app" {
   vpc_security_group_ids      = [var.security_group_id]
   associate_public_ip_address = var.associate_public_ip
   key_name                    = var.key_name
+  count                       = var.instance_count
 
   tags = {
     Name = var.name

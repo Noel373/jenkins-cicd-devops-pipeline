@@ -1,12 +1,9 @@
 ---
-- name: Setup Kubernetes Master Node
-  hosts: master_node
+- name: Setup Kubernetes Worker Node and join cluster
+  hosts: worker_node
   become: true
   vars:
-    pod_network_cidr: "192.168.0.0/16"
-    k8s_version: "1.29"
-    containerd_config_path: /etc/containerd/config.toml
-    join_script_local_path: "/tmp/kubeadm_join_cmd.sh"   # On Ansible control node
+    join_script_local_path: "/tmp/kubeadm_join_cmd.sh"  # Path on control node
 
   tasks:
 
@@ -70,13 +67,15 @@
 
     - name: Install containerd
       ansible.builtin.apt:
-        name: containerd.io
+        name: containerd
         update_cache: yes
+        
     - name: Ensure /etc/containerd directory exists
       ansible.builtin.file:
         path: /etc/containerd
         state: directory
         mode: '0755'
+
 
     - name: Generate default containerd config
       ansible.builtin.command: containerd config default
@@ -84,12 +83,12 @@
 
     - name: Save containerd config
       ansible.builtin.copy:
-        dest: "{{ containerd_config_path }}"
+        dest: /etc/containerd/config.toml
         content: "{{ containerd_default_config.stdout }}"
 
     - name: Enable systemd cgroup in containerd config
       ansible.builtin.replace:
-        path: "{{ containerd_config_path }}"
+        path: /etc/containerd/config.toml
         regexp: 'SystemdCgroup = false'
         replace: 'SystemdCgroup = true'
 
@@ -101,13 +100,13 @@
 
     - name: Add Kubernetes GPG key
       ansible.builtin.apt_key:
-        url: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key"
+        url: "https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key"
         keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
         state: present
 
     - name: Add Kubernetes apt repository
       ansible.builtin.apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
         filename: kubernetes
         state: present
 
@@ -122,59 +121,15 @@
     - name: Hold Kubernetes packages
       ansible.builtin.command: apt-mark hold kubelet kubeadm kubectl
 
-    - name: Get private IP of host
-      ansible.builtin.shell: hostname -I | awk '{print $1}'
-      register: private_ip
-      changed_when: false
-
-    - name: Initialize Kubernetes cluster
-      ansible.builtin.command: >
-        kubeadm init
-        --apiserver-advertise-address={{ private_ip.stdout }}
-        --pod-network-cidr={{ pod_network_cidr }}
-      register: kubeadm_init_output
-      args:
-        creates: /etc/kubernetes/admin.conf
-
-    - name: Configure kubectl for ubuntu user
-      ansible.builtin.file:
-        path: /home/ubuntu/.kube
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-
-    - name: Copy kube config to ubuntu user
+    - name: Copy join command script from control node to worker node
       ansible.builtin.copy:
-        src: /etc/kubernetes/admin.conf
-        dest: /home/ubuntu/.kube/config
-        remote_src: yes
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-
-    - name: Extract join command
-      ansible.builtin.shell: kubeadm token create --print-join-command
-      register: join_command
-
-    - name: Save join command script on master node
-      ansible.builtin.copy:
-        content: "{{ join_command.stdout }}\n"
+        src: "{{ join_script_local_path }}"
         dest: /home/ubuntu/kubeadm_join_cmd.sh
         owner: ubuntu
         group: ubuntu
         mode: '0755'
 
-    - name: Fetch join command script to control node (/tmp)
-      fetch:
-        src: /home/ubuntu/kubeadm_join_cmd.sh
-        dest: "{{ join_script_local_path }}"
-        flat: yes
+    - name: Execute join command on worker node
+      ansible.builtin.shell: /home/ubuntu/kubeadm_join_cmd.sh
 
-    - name: Install Calico network plugin
-      ansible.builtin.shell: |
-        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
-      args:
-        executable: /bin/bash
-      environment:
-        KUBECONFIG: /etc/kubernetes/admin.conf
+                                      

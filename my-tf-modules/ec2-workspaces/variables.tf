@@ -10,3 +10,8 @@ variable "associate_public_ip" {
   default = false
 }
 variable "key_name" {}
+variable "instance_count" {
+  type    = number
+  default = 1
+  
+}
