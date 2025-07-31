@@ -1,52 +1,67 @@
 #!/bin/bash
-# run as user-data for worker nodes in a Kubernetes cluster
-set -euxo pipefail
+# This script sets up a Kubernetes worker node on an Ubuntu system
+# Run this script with: sudo bash worker-node.sh
 
-# Log output to /var/log/user-data.log
-exec > /var/log/user-data.log 2>&1
+set -e
 
-# Wait for cloud-init to fully finish networking
-while ! curl -s --max-time 2 https://google.com >/dev/null; do
-  echo " Waiting for internet connection..."
-  sleep 5
-done
+echo "[1] Disabling swap..."
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
 
-# Disable swap
-swapoff -a
-sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-
-# Load required kernel modules and sysctl params
-modprobe br_netfilter
-echo 'br_netfilter' > /etc/modules-load.d/br_netfilter.conf
-
-cat <<EOF >/etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.ipv4.ip_forward = 1
+echo "[2] Loading required kernel modules..."
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
 EOF
 
-sysctl --system
+sudo modprobe overlay
+sudo modprobe br_netfilter
 
-# Install containerd
-apt-get update -y
-apt-get install -y containerd
+echo "[3] Applying sysctl params..."
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
 
-mkdir -p /etc/containerd
-containerd config default > /etc/containerd/config.toml
-systemctl restart containerd
-systemctl enable containerd
+sudo sysctl --system
 
-# Install kubeadm, kubelet, kubectl
-apt-get install -y apt-transport-https ca-certificates curl gnupg
+echo "[4] Installing containerd..."
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/kubernetes.gpg
-echo "deb https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+  gpg --dearmor | sudo tee /etc/apt/keyrings/docker.gpg > /dev/null
 
-apt-get update -y
-apt-get install -y kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl
-systemctl enable kubelet
+echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Join the cluster
-kubeadm join 172.31.0.91:6443 --token e0fv9j.34jjl9ywe1iv4c11 \
-  --discovery-token-ca-cert-hash sha256:711724e98514612c7f1c97ff1294bbe85cec3f895cb063e7c1e7ed4477792c4d
+sudo apt-get update
+sudo apt-get install -y containerd.io
+
+echo "[5] Configuring containerd with systemd cgroup..."
+sudo mkdir -p /etc/containerd
+sudo containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+
+echo "[6] Installing Kubernetes components (kubeadm, kubelet)..."
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | \
+  gpg --dearmor | sudo tee /etc/apt/keyrings/kubernetes-apt-keyring.gpg > /dev/null
+
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | \
+sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm
+sudo apt-mark hold kubelet kubeadm
+
+echo "[7] Joining the Kubernetes cluster..."
+sudo kubeadm join 172.31.24.212:6443 --token 59d3x6.yfmgfn3bf2r53s0y \
+        --discovery-token-ca-cert-hash sha256:7010de295bf9a00b605523686dbe6605859a795c868f223072443551c355ebc
