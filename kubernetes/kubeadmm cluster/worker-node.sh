@@ -64,4 +64,8 @@ sudo apt-mark hold kubelet kubeadm
 
 echo "[7] Joining the Kubernetes cluster..."
 sudo kubeadm join 172.31.24.212:6443 --token 59d3x6.yfmgfn3bf2r53s0y \
+<<<<<<< HEAD
         --discovery-token-ca-cert-hash sha256:7010de295bf9a00b605523686dbe6605859a795c868f223072443551c355ebc
+=======
+        --discovery-token-ca-cert-hash sha256:7010de295bf9a00b605523686dbe6605859a795c868f223072443551c355ebc
+>>>>>>> 800805ce98e8e050d34f0dfe8f3a7e825afab791
