@@ -62,6 +62,9 @@ apt-get update
 apt-get install -y kubelet kubeadm
 apt-mark hold kubelet kubeadm
 
+systemctl enable kubelet
+systemctl start kubelet
+
 echo "[7] Joining the Kubernetes cluster..."
 # NOTE: Replace below with your actual join command
 kubeadm join 172.31.24.212:6443 --token 59d3x6.yfmgfn3bf2r53s0y \
