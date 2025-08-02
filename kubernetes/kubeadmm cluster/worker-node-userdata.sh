@@ -61,6 +61,8 @@ tee /etc/apt/sources.list.d/kubernetes.list
 apt-get update
 apt-get install -y kubelet kubeadm
 apt-mark hold kubelet kubeadm
+systemctl enable kubelet
+systemctl start kubelet
 
 systemctl enable kubelet
 systemctl start kubelet
