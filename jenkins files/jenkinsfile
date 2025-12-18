@@ -1,0 +1,105 @@
+// Jenkins Pipeline for Project022A (Author: Noel Kiniben)
+pipeline {
+  agent none  // No global agent; each stage defines its own
+
+  tools {
+    maven 'maven3.9.1'  // Maven tool configured in Jenkins global settings
+  }
+
+  environment {
+    IMAGE_NAME = 'noeldevops/myapp-dev'  // Docker image base name
+  }
+
+  stages {
+    stage('Clone Source') {
+      agent { label 'build-agent' }  // Run on build agent
+      steps {
+        // Clone the repo using GitHub credentials
+        git branch: 'working', credentialsId: '285804eb-0ca2-46a3-9e9a-ff7438b488db', url: 'https://github.com/porta420/my-project-007'
+      }
+    }
+
+    stage('Build Artifacts') {
+      agent { label 'build-agent' }
+      steps {
+        // Compile and package Java project with Maven, skipping tests
+        sh 'mvn clean package -DskipTests'
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      agent { label 'build-agent' }
+      environment {
+        SONAR_TOKEN = credentials('sonarqube-token')  // Securely inject SonarQube token
+      }
+      steps {
+        // Run static code analysis using SonarQube
+        withSonarQubeEnv('SonarQube') {
+          sh '''
+            mvn verify sonar:sonar \
+              -Dsonar.projectKey=project-0022A \
+              -Dsonar.login=$SONAR_TOKEN
+          '''
+        }
+      }
+    }
+
+    stage('Build & Deploy') {
+      agent { label 'build-agent' }
+      steps {
+        // Deploy Maven artifacts to Nexus using Jenkins credentials
+        withCredentials([usernamePassword(
+          credentialsId: 'nexus-creds',
+          usernameVariable: 'NEXUS_USER',
+          passwordVariable: 'NEXUS_PASS'
+        )]) {
+          sh 'mvn clean deploy -DskipTests'
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      agent { label 'build-agent' }
+      steps {
+        // Build Docker image tagged with Jenkins build number
+        sh '''
+          docker build -t $IMAGE_NAME:$BUILD_NUMBER .
+        '''
+      }
+    }
+
+    stage('Login to DockerHub and Push') {
+      agent { label 'build-agent' }
+      steps {
+        // Log in to DockerHub and push the image securely
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub-creds',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push $IMAGE_NAME:$BUILD_NUMBER
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      agent { label 'deploy-agent' }
+      steps {
+        // Use kubeconfig file securely from Jenkins credentials
+        withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KCFG_FILE')]) {
+          // Clone repo again since deploy-agent has isolated workspace
+          git branch: 'working', credentialsId: '285804eb-0ca2-46a3-9e9a-ff7438b488db', url: 'https://github.com/porta420/my-project-007'
+          
+          // Set KUBECONFIG and update the image in the deployment
+          sh '''
+            export KUBECONFIG=$KCFG_FILE
+            kubectl set image deployment/myapp myapp-dev=$IMAGE_NAME:$BUILD_NUMBER
+          '''
+        }
+      }
+    }
+  }
+}
