@@ -1,0 +1,88 @@
+---
+- name: Install Jenkins on Ubuntu with Java 21
+  hosts: jenkins
+  become: yes
+  vars:
+    jenkins_key_url: "https://pkg.jenkins.io/debian/jenkins.io-2023.key"
+    jenkins_repo: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian binary/"
+    jenkins_package_name: "jenkins"
+    java_version: "21"
+
+  tasks:
+    - name: Install dependencies for repo setup
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - wget
+          - gnupg
+        state: present
+        update_cache: yes
+
+    - name: Create apt keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Jenkins keyring
+      get_url:
+        url: "{{ jenkins_key_url }}"
+        dest: /etc/apt/keyrings/jenkins-keyring.asc
+        mode: '0644'
+
+    - name: Add Jenkins apt repo
+      apt_repository:
+        repo: "{{ jenkins_repo }}"
+        filename: jenkins
+        state: present
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install OpenJDK {{ java_version }}
+      apt:
+        name: "openjdk-{{ java_version }}-jdk"
+        state: present
+
+    - name: Install Jenkins
+      apt:
+        name: "{{ jenkins_package_name }}"
+        state: present
+
+    - name: Ensure Jenkins is started and enabled
+      systemd:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Fetch Jenkins initial admin password
+      slurp:
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_password_encoded
+      become: yes
+
+    - name: Save Jenkins initial admin password to control node
+      copy:
+        content: "{{ jenkins_password_encoded.content | b64decode }}"
+        dest: /tmp/jenkins_initial_password.txt
+        mode: '0600'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Copy Jenkins public key to control node
+      slurp:
+        src: /home/jenkins/.ssh/id_rsa.pub
+      register: jenkins_pubkey_encoded
+      become: yes
+      ignore_errors: yes
+
+    - name: Save Jenkins public key on Ansible control node
+      copy:
+        content: "{{ jenkins_pubkey_encoded.content | b64decode }}"
+        dest: /tmp/jenkins_controller.pub
+        mode: '0644'
+      delegate_to: localhost
+      run_once: true
+      when: jenkins_pubkey_encoded is defined and jenkins_pubkey_encoded.content is defined

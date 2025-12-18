@@ -1,0 +1,180 @@
+---
+- name: Setup Kubernetes Master Node
+  hosts: master_node
+  become: true
+  vars:
+    pod_network_cidr: "192.168.0.0/16"
+    k8s_version: "1.29"
+    containerd_config_path: /etc/containerd/config.toml
+    join_script_local_path: "/tmp/kubeadm_join_cmd.sh"   # On Ansible control node
+
+  tasks:
+
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
+
+    - name: Comment out swap entry in fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\s+swap\s+.*)$'
+        replace: '# \1'
+
+    - name: Load required kernel modules
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Load overlay module
+      ansible.builtin.modprobe:
+        name: overlay
+        state: present
+
+    - name: Load br_netfilter module
+      ansible.builtin.modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Set sysctl parameters for Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/k8s.conf
+        content: |
+          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward                 = 1
+
+    - name: Apply sysctl parameters
+      ansible.builtin.command: sysctl --system
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        keyring: /etc/apt/keyrings/docker.gpg
+        state: present
+
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Install containerd
+      ansible.builtin.apt:
+        name: containerd.io
+        update_cache: yes
+    - name: Ensure /etc/containerd directory exists
+      ansible.builtin.file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Generate default containerd config
+      ansible.builtin.command: containerd config default
+      register: containerd_default_config
+
+    - name: Save containerd config
+      ansible.builtin.copy:
+        dest: "{{ containerd_config_path }}"
+        content: "{{ containerd_default_config.stdout }}"
+
+    - name: Enable systemd cgroup in containerd config
+      ansible.builtin.replace:
+        path: "{{ containerd_config_path }}"
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+
+    - name: Restart and enable containerd
+      ansible.builtin.service:
+        name: containerd
+        state: restarted
+        enabled: yes
+
+    - name: Add Kubernetes GPG key
+      ansible.builtin.apt_key:
+        url: "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key"
+        keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        state: present
+
+    - name: Add Kubernetes apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+        filename: kubernetes
+        state: present
+
+    - name: Install Kubernetes components
+      ansible.builtin.apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        update_cache: yes
+
+    - name: Hold Kubernetes packages
+      ansible.builtin.command: apt-mark hold kubelet kubeadm kubectl
+
+    - name: Get private IP of host
+      ansible.builtin.shell: hostname -I | awk '{print $1}'
+      register: private_ip
+      changed_when: false
+
+    - name: Initialize Kubernetes cluster
+      ansible.builtin.command: >
+        kubeadm init
+        --apiserver-advertise-address={{ private_ip.stdout }}
+        --pod-network-cidr={{ pod_network_cidr }}
+      register: kubeadm_init_output
+      args:
+        creates: /etc/kubernetes/admin.conf
+
+    - name: Configure kubectl for ubuntu user
+      ansible.builtin.file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy kube config to ubuntu user
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Extract join command
+      ansible.builtin.shell: kubeadm token create --print-join-command
+      register: join_command
+
+    - name: Save join command script on master node
+      ansible.builtin.copy:
+        content: "{{ join_command.stdout }}\n"
+        dest: /home/ubuntu/kubeadm_join_cmd.sh
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Fetch join command script to control node (/tmp)
+      fetch:
+        src: /home/ubuntu/kubeadm_join_cmd.sh
+        dest: "{{ join_script_local_path }}"
+        flat: yes
+
+    - name: Install Calico network plugin
+      ansible.builtin.shell: |
+        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
