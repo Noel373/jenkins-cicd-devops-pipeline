@@ -57,3 +57,46 @@ Use this custom AMI to launch 100 EC2 instances, and add the cloud-init script a
 ## 🧩 Optional: First-Time Setup Using Playbook
 
 If your `server-test` isn't ready yet, run `passwordless-ssh.yml` to configure it before creating the AMI.
+
+## Ansible Dynamic Inventory with AWS EC2
+
+
+## Prerequisites
+
+- Ansible installed
+- Python 3 installed
+- AWS credentials already configured (AWS CLI or EC2 IAM Role)
+- SSH access to EC2 instances (PEM key available)
+
+---
+
+## Required Dependencies
+
+Install Python libraries:
+```bash
+pip install boto3 botocore
+
+ansible-galaxy collection install amazon.aws
+ansible-inventory -i dynamic-inventory-aws_ec2.yml --graph
+
+Create ansible.cfg in the project root:
+
+[defaults]
+inventory = dynamic-inventory-aws_ec2.yml
+host_key_checking = False
+stdout_callback = yaml
+interpreter_python = auto_silent
+
+
+ansible all \
+  -i dynamic-inventory-aws_ec2.yml \
+  -m ping \
+  -u ubuntu \
+  --private-key /tmp/ansible.pem
+
+ansible-playbook install-sonarqube.yaml \
+  -i dynamic-inventory-aws_ec2.yml \
+  -u ubuntu \
+  --private-key /tmp/ansible.pem \
+  -b
+
