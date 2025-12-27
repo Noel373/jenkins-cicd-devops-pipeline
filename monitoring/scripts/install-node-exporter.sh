@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
 NE_VERSION="1.8.1"
 NE_USER="node_exporter"
@@ -40,3 +40,4 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now node_exporter
 
 echo "[OK] Node Exporter installed and running"
+
